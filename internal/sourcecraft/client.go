@@ -203,18 +203,30 @@ func (s *Service) Config() Config {
 }
 
 func (s *Service) ListRuns(ctx context.Context, org, repo string, pageSize int, pageToken string) (ListRunsResponse, error) {
+	if err := s.requirePAT(); err != nil {
+		return ListRunsResponse{}, err
+	}
 	return s.client.ListRuns(ctx, org, repo, pageSize, pageToken)
 }
 
 func (s *Service) GetRun(ctx context.Context, org, repo, runSlug string) (Run, error) {
+	if err := s.requirePAT(); err != nil {
+		return Run{}, err
+	}
 	return s.client.GetRun(ctx, org, repo, runSlug)
 }
 
 func (s *Service) RunWorkflows(ctx context.Context, org, repo string, body RunWorkflowsBody) (Run, error) {
+	if err := s.requirePAT(); err != nil {
+		return Run{}, err
+	}
 	return s.client.RunWorkflows(ctx, org, repo, body)
 }
 
 func (s *Service) GetCubeLogs(ctx context.Context, org, repo, runSlug, workflowSlug, taskSlug, cubeSlug string, page int) (GetCubeLogsResponse, error) {
+	if err := s.requirePAT(); err != nil {
+		return GetCubeLogsResponse{}, err
+	}
 	return s.client.GetCubeLogs(ctx, org, repo, runSlug, workflowSlug, taskSlug, cubeSlug, page)
 }
 
@@ -257,6 +269,9 @@ func (s *Service) StreamCubeLogs(ctx context.Context, org, repo, runSlug, workfl
 }
 
 func (s *Service) GetCubeArtifacts(ctx context.Context, org, repo, runSlug, workflowSlug, taskSlug, cubeSlug string) ([]Artifact, error) {
+	if err := s.requirePAT(); err != nil {
+		return nil, err
+	}
 	resp, err := s.client.GetCubeArtifacts(ctx, org, repo, runSlug, workflowSlug, taskSlug, cubeSlug)
 	if err != nil {
 		return nil, err
@@ -295,6 +310,9 @@ func (s *Service) DownloadArtifact(ctx context.Context, org, repo, runSlug, work
 }
 
 func (s *Service) WaitRun(ctx context.Context, org, repo, runSlug string, opts WaitOptions) (WaitResult, error) {
+	if err := s.requirePAT(); err != nil {
+		return WaitResult{}, err
+	}
 	if opts.PollInterval <= 0 {
 		opts.PollInterval = 10 * time.Second
 	}
@@ -445,7 +463,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, query url.Valu
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -471,6 +491,13 @@ func (c *Client) doJSON(ctx context.Context, method, path string, query url.Valu
 
 func repoCIPath(org, repo, suffix string) string {
 	return fmt.Sprintf("/repos/%s/%s%s", url.PathEscape(org), url.PathEscape(repo), suffix)
+}
+
+func (s *Service) requirePAT() error {
+	if s.cfg.HasPAT() {
+		return nil
+	}
+	return errors.New("missing SOURCECRAFT_PAT; configure it in env or ~/.config/sourcecraft/*.env")
 }
 
 func looksLikeText(contentType, name string, body []byte) bool {
@@ -725,7 +752,9 @@ func (s *Service) CallAPI(ctx context.Context, method, rawPath string, pathParam
 	if err != nil {
 		return APIResult{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+s.cfg.PAT)
+	if s.cfg.PAT != "" {
+		req.Header.Set("Authorization", "Bearer "+s.cfg.PAT)
+	}
 	if contentType != "" && reqBody != nil {
 		req.Header.Set("Content-Type", contentType)
 	}

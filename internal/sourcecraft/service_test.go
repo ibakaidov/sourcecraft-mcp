@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -140,6 +141,19 @@ func TestExtractTagContentReadsInnerTitle(t *testing.T) {
 	html := `<!doctype html><html><head><title>SourceCraft Workflows</title></head><body></body></html>`
 	if got := extractTagContent(html, "title"); got != "SourceCraft Workflows" {
 		t.Fatalf("extractTagContent(...) = %q, want %q", got, "SourceCraft Workflows")
+	}
+}
+
+func TestListRunsRequiresPAT(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(Config{APIBase: "https://example.com", DocsBase: "https://example.com"}, nil)
+	_, err := svc.ListRuns(context.Background(), "acme", "demo", 10, "")
+	if err == nil {
+		t.Fatal("expected missing PAT error")
+	}
+	if !strings.Contains(err.Error(), "SOURCECRAFT_PAT") {
+		t.Fatalf("error = %q, want SOURCECRAFT_PAT hint", err)
 	}
 }
 

@@ -77,6 +77,34 @@ func TestLoadConfigResolutionOrder(t *testing.T) {
 	}
 }
 
+func TestLoadConfigWithoutPATStillSucceeds(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	repo := filepath.Join(tmp, "repo")
+	if err := os.MkdirAll(filepath.Join(home, ".config", "sourcecraft"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, filepath.Join(repo, ".env.sourcecraft"), "SOURCECRAFT_ORG=acme\nSOURCECRAFT_REPO=demo\n")
+
+	t.Setenv("HOME", home)
+	t.Setenv("SOURCECRAFT_PAT", "")
+
+	cfg, err := LoadConfig(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HasPAT() {
+		t.Fatal("expected config without PAT to remain unauthenticated")
+	}
+	if got := cfg.EnvSummary()["auth_configured"]; got != "false" {
+		t.Fatalf("auth_configured = %q, want false", got)
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

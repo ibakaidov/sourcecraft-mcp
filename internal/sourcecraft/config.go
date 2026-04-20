@@ -86,10 +86,11 @@ func LoadConfig(workDir string) (Config, error) {
 		cfg.DocsBase = strings.TrimRight(docsBase, "/")
 	}
 
-	if cfg.PAT == "" {
-		return cfg, errors.New("missing required env: SOURCECRAFT_PAT")
-	}
 	return cfg, nil
+}
+
+func (c Config) HasPAT() bool {
+	return strings.TrimSpace(c.PAT) != ""
 }
 
 func (c Config) ResolveRepo(org, repo string) (string, string, error) {
@@ -204,13 +205,14 @@ func parseEnvValue(value string) string {
 
 func (c Config) EnvSummary() map[string]string {
 	return map[string]string{
-		"org":       c.Org,
-		"repo":      c.Repo,
-		"repo_hint": c.RepoHint,
-		"env_file":  c.EnvFile,
-		"api_base":  c.APIBase,
-		"docs_base": c.DocsBase,
-		"workdir":   c.WorkDir,
+		"org":             c.Org,
+		"repo":            c.Repo,
+		"repo_hint":       c.RepoHint,
+		"env_file":        c.EnvFile,
+		"api_base":        c.APIBase,
+		"docs_base":       c.DocsBase,
+		"workdir":         c.WorkDir,
+		"auth_configured": fmt.Sprintf("%t", c.HasPAT()),
 	}
 }
 
