@@ -1,6 +1,6 @@
 .DS_Store
 .env.sourcecraft
-sourcecraft-mcp
+/sourcecraft-mcp
 dist/
 bin/
 coverage.out
