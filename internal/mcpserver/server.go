@@ -14,7 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const version = "v0.1.0"
+const version = "v0.1.1"
 
 type Server struct {
 	*mcp.Server
@@ -333,7 +333,7 @@ func (s *Server) getRun(ctx context.Context, _ *mcp.CallToolRequest, in getRunIn
 	return nil, out, err
 }
 
-func (s *Server) runWorkflow(ctx context.Context, _ *mcp.CallToolRequest, in runWorkflowInput) (*mcp.CallToolResult, runWorkflowOutput, error) {
+func (s *Server) runWorkflow(ctx context.Context, req *mcp.CallToolRequest, in runWorkflowInput) (*mcp.CallToolResult, runWorkflowOutput, error) {
 	org, repo, err := s.resolveRepo(in.Org, in.Repo)
 	if err != nil {
 		return nil, runWorkflowOutput{}, err
@@ -349,7 +349,9 @@ func (s *Server) runWorkflow(ctx context.Context, _ *mcp.CallToolRequest, in run
 	}
 	out := runWorkflowOutput{Run: run, Waited: in.Wait}
 	if in.Wait {
-		waitResult, err := s.service.WaitRun(ctx, org, repo, run.Slug, toWaitOptions(in.PollSeconds, in.HeartbeatSeconds, in.TimeoutSeconds))
+		waitOptions := toWaitOptions(in.PollSeconds, in.HeartbeatSeconds, in.TimeoutSeconds)
+		waitOptions.OnProgress = waitRunProgressNotifier(ctx, req)
+		waitResult, err := s.service.WaitRun(ctx, org, repo, run.Slug, waitOptions)
 		if err != nil {
 			return nil, runWorkflowOutput{}, err
 		}
@@ -358,7 +360,7 @@ func (s *Server) runWorkflow(ctx context.Context, _ *mcp.CallToolRequest, in run
 	return nil, out, nil
 }
 
-func (s *Server) runDeployWorkflow(ctx context.Context, _ *mcp.CallToolRequest, in runDeployInput) (*mcp.CallToolResult, runWorkflowOutput, error) {
+func (s *Server) runDeployWorkflow(ctx context.Context, req *mcp.CallToolRequest, in runDeployInput) (*mcp.CallToolResult, runWorkflowOutput, error) {
 	org, repo, err := s.resolveRepo(in.Org, in.Repo)
 	if err != nil {
 		return nil, runWorkflowOutput{}, err
@@ -392,7 +394,9 @@ func (s *Server) runDeployWorkflow(ctx context.Context, _ *mcp.CallToolRequest, 
 	}
 	out := runWorkflowOutput{Run: run, Waited: wait}
 	if wait {
-		waitResult, err := s.service.WaitRun(ctx, org, repo, run.Slug, toWaitOptions(in.PollSeconds, in.HeartbeatSeconds, in.TimeoutSeconds))
+		waitOptions := toWaitOptions(in.PollSeconds, in.HeartbeatSeconds, in.TimeoutSeconds)
+		waitOptions.OnProgress = waitRunProgressNotifier(ctx, req)
+		waitResult, err := s.service.WaitRun(ctx, org, repo, run.Slug, waitOptions)
 		if err != nil {
 			return nil, runWorkflowOutput{}, err
 		}
@@ -401,12 +405,14 @@ func (s *Server) runDeployWorkflow(ctx context.Context, _ *mcp.CallToolRequest, 
 	return nil, out, nil
 }
 
-func (s *Server) waitRun(ctx context.Context, _ *mcp.CallToolRequest, in waitRunInput) (*mcp.CallToolResult, sourcecraft.WaitResult, error) {
+func (s *Server) waitRun(ctx context.Context, req *mcp.CallToolRequest, in waitRunInput) (*mcp.CallToolResult, sourcecraft.WaitResult, error) {
 	org, repo, err := s.resolveRepo(in.Org, in.Repo)
 	if err != nil {
 		return nil, sourcecraft.WaitResult{}, err
 	}
-	out, err := s.service.WaitRun(ctx, org, repo, in.RunSlug, toWaitOptions(in.PollSeconds, in.HeartbeatSeconds, in.TimeoutSeconds))
+	waitOptions := toWaitOptions(in.PollSeconds, in.HeartbeatSeconds, in.TimeoutSeconds)
+	waitOptions.OnProgress = waitRunProgressNotifier(ctx, req)
+	out, err := s.service.WaitRun(ctx, org, repo, in.RunSlug, waitOptions)
 	return nil, out, err
 }
 
@@ -606,4 +612,39 @@ func nonEmpty(value, fallback string) string {
 
 func sourcecraftDefaultContentType(localPath string) string {
 	return "application/octet-stream"
+}
+
+func waitRunProgressNotifier(ctx context.Context, req *mcp.CallToolRequest) func(sourcecraft.WaitProgressUpdate) error {
+	if req == nil || req.Session == nil {
+		return nil
+	}
+	if req.Params == nil {
+		return nil
+	}
+	token := req.Params.GetProgressToken()
+	if token == nil {
+		return nil
+	}
+	return func(update sourcecraft.WaitProgressUpdate) error {
+		message := update.Summary
+		if !update.Changed {
+			runSlug := strings.TrimSpace(update.Run.Slug)
+			if runSlug == "" {
+				runSlug = "unknown"
+			}
+			status := strings.TrimSpace(update.Run.Status)
+			if status == "" {
+				status = "processing"
+			}
+			message = fmt.Sprintf("run=%s status=%s waiting elapsed=%s", runSlug, status, update.Elapsed.Round(time.Second))
+		}
+		if err := req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
+			ProgressToken: token,
+			Message:       message,
+			Progress:      update.Elapsed.Seconds(),
+		}); err != nil {
+			return nil
+		}
+		return nil
+	}
 }

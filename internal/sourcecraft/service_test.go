@@ -45,6 +45,54 @@ func TestWaitRunTracksTransitions(t *testing.T) {
 	}
 }
 
+func TestWaitRunEmitsHeartbeatProgressWithoutStateChanges(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/acme/demo/cicd/runs/42" {
+			http.NotFound(w, r)
+			return
+		}
+		statuses := []string{"processing", "processing", "processing", "success"}
+		if calls >= len(statuses) {
+			calls = len(statuses) - 1
+		}
+		_ = json.NewEncoder(w).Encode(Run{Slug: "42", Status: statuses[calls]})
+		calls++
+	}))
+	defer api.Close()
+
+	var updates []WaitProgressUpdate
+	svc := NewService(Config{PAT: "token", APIBase: api.URL, DocsBase: "https://example.com"}, nil)
+	_, err := svc.WaitRun(context.Background(), "acme", "demo", "42", WaitOptions{
+		PollInterval: 5 * time.Millisecond,
+		Heartbeat:    8 * time.Millisecond,
+		Timeout:      time.Second,
+		OnProgress: func(update WaitProgressUpdate) error {
+			updates = append(updates, update)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updates) < 3 {
+		t.Fatalf("len(updates) = %d, want >= 3", len(updates))
+	}
+
+	var sawHeartbeatWithoutChange bool
+	for _, update := range updates {
+		if !update.Changed {
+			sawHeartbeatWithoutChange = true
+			break
+		}
+	}
+	if !sawHeartbeatWithoutChange {
+		t.Fatalf("updates = %+v, want at least one heartbeat update without state change", updates)
+	}
+}
+
 func TestStreamCubeLogsFollowsPages(t *testing.T) {
 	t.Parallel()
 

@@ -121,9 +121,16 @@ Wait for a run:
 {
   "run_slug": "46",
   "poll_seconds": 10,
+  "heartbeat_seconds": 30,
   "timeout_seconds": 3600
 }
 ```
+
+The server emits MCP progress notifications while waiting when the client provides a `progressToken`, including heartbeat updates if run state does not change.
+
+## Release Notes
+
+- `v0.1.1`: fixed long-running `wait_run`/`run_*_workflow(wait=true)` calls by wiring `heartbeat_seconds` to progress notifications so MCP clients can keep long calls alive.
 
 ## Validation
 

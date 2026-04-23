@@ -135,6 +135,14 @@ type WaitOptions struct {
 	PollInterval time.Duration
 	Heartbeat    time.Duration
 	Timeout      time.Duration
+	OnProgress   func(WaitProgressUpdate) error
+}
+
+type WaitProgressUpdate struct {
+	Run     Run           `json:"run"`
+	Summary string        `json:"summary"`
+	Elapsed time.Duration `json:"elapsed"`
+	Changed bool          `json:"changed"`
 }
 
 type WaitResult struct {
@@ -327,6 +335,7 @@ func (s *Service) WaitRun(ctx context.Context, org, repo, runSlug string, opts W
 	}
 
 	var lastSummary string
+	lastHeartbeat := start
 	var changes []string
 	for {
 		run, err := s.GetRun(ctx, org, repo, runSlug)
@@ -334,19 +343,38 @@ func (s *Service) WaitRun(ctx context.Context, org, repo, runSlug string, opts W
 			return WaitResult{}, err
 		}
 
+		now := time.Now()
 		summary := summarizeRun(run)
-		if summary != lastSummary {
+		changed := summary != lastSummary
+		if changed {
 			lastSummary = summary
 			changes = append(changes, summary)
+		}
+		if opts.OnProgress != nil {
+			shouldEmit := changed
+			if !shouldEmit && opts.Heartbeat > 0 && now.Sub(lastHeartbeat) >= opts.Heartbeat {
+				shouldEmit = true
+			}
+			if shouldEmit {
+				if err := opts.OnProgress(WaitProgressUpdate{
+					Run:     run,
+					Summary: summary,
+					Elapsed: now.Sub(start),
+					Changed: changed,
+				}); err != nil {
+					return WaitResult{}, err
+				}
+				lastHeartbeat = now
+			}
 		}
 		if terminalStatuses[run.Status] {
 			return WaitResult{
 				Run:             run,
 				ObservedChanges: changes,
-				Duration:        time.Since(start),
+				Duration:        now.Sub(start),
 			}, nil
 		}
-		if !deadline.IsZero() && time.Now().After(deadline) {
+		if !deadline.IsZero() && now.After(deadline) {
 			return WaitResult{}, fmt.Errorf("wait timeout after %s", opts.Timeout)
 		}
 

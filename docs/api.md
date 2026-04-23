@@ -3,7 +3,7 @@
 ## Deploy-first tools
 
 - `run_deploy_workflow`: explicit confirm string is mandatory; by default it waits until completion.
-- `wait_run`: long-polling for `created`, `prepared`, `processing` to terminal states `success`, `failed`, `canceled`, `timeout`.
+- `wait_run`: long-polling for `created`, `prepared`, `processing` to terminal states `success`, `failed`, `canceled`, `timeout`; emits MCP progress heartbeats when `progressToken` is present.
 
 ## Generic CI tools
 
